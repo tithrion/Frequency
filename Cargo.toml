@@ -1,0 +1,36 @@
+[package]
+name = "pitchperfect"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+authors = ["PitchPerfect Contributors"]
+description = "A fast, accurate, cross-platform musical instrument tuner."
+license = "GPL-3.0-only"
+readme = "README.md"
+keywords = ["audio", "tuner", "music", "pitch", "egui"]
+categories = ["multimedia::audio"]
+
+[features]
+default = []
+# CPAL's JACK host is optional because it needs libjack at build time. Enable it
+# with `cargo run --features jack` on systems that use a JACK server.
+jack = ["cpal/jack"]
+
+[dependencies]
+cpal = "0.15"
+eframe = "0.27"
+egui = "0.27"
+rtrb = "0.3" # Lock-free ringbuffer
+rustfft = "6.2"
+pitch-detection = "0.3" # YIN / MPM implementations
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+directories = "5.0"
+log = "0.4"
+env_logger = "0.11"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
