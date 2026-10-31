@@ -1,6 +1,6 @@
 //! Main egui application.
 
-use crate::audio::host::HostInfo;
+use crate::audio::host::{automatic_host, HostInfo, AUTO_HOST};
 use crate::audio::{AudioHandle, AudioSelection, AudioStatus};
 use crate::config::profiles::{ProfilesStore, GENERIC_PROFILE_NAME};
 use crate::config::settings::{Settings, MAX_A4, MAX_SMOOTHING, MIN_A4, MIN_SMOOTHING};
@@ -54,7 +54,7 @@ impl TunerApp {
         let hosts = crate::audio::host::scan();
         let (selected_host, selected_device) = initial_selection(&hosts, &settings);
         let selection = AudioSelection {
-            host: host_option(&selected_host),
+            host: resolved_host(&selected_host, &hosts),
             device: device_option(&selected_device),
             preferred_sample_rate: settings.preferred_sample_rate,
         };
@@ -85,11 +85,24 @@ impl TunerApp {
     }
 
     fn devices_for(&self, host: &str) -> Vec<String> {
+        let name = if host == AUTO_HOST {
+            match automatic_host(&self.hosts) {
+                Some(host) => host.name.as_str(),
+                None => return Vec::new(),
+            }
+        } else {
+            host
+        };
         self.hosts
             .iter()
-            .find(|candidate| candidate.name == host)
+            .find(|candidate| candidate.name == name)
             .map(|candidate| candidate.devices.clone())
             .unwrap_or_default()
+    }
+
+    /// Host passed to the audio thread; `None` keeps CPAL's default host.
+    fn active_host(&self) -> Option<String> {
+        resolved_host(&self.selected_host, &self.hosts)
     }
 
     fn persist_settings(&mut self) {
@@ -101,9 +114,15 @@ impl TunerApp {
     }
 
     fn apply_audio_selection(&mut self) {
-        let host = host_option(&self.selected_host);
+        let host = self.active_host();
         let device = device_option(&self.selected_device);
-        self.settings.host = host.clone();
+        // Keep "Automatic" as an unset preference so the startup probe runs
+        // again on the next launch.
+        self.settings.host = if self.selected_host == AUTO_HOST {
+            None
+        } else {
+            host.clone()
+        };
         self.settings.device = device.clone();
         self.audio.select(AudioSelection {
             host,
@@ -131,7 +150,7 @@ impl TunerApp {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new("PitchPerfect")
+                        RichText::new("Frequency")
                             .size(24.0)
                             .strong()
                             .color(theme::TEXT),
@@ -176,7 +195,8 @@ impl TunerApp {
     }
 
     fn bottom_bar(&mut self, ctx: &egui::Context, status: &AudioStatus) {
-        let host_names: Vec<String> = self.hosts.iter().map(|host| host.name.clone()).collect();
+        let mut host_names = vec![AUTO_HOST.to_string()];
+        host_names.extend(self.hosts.iter().map(|host| host.name.clone()));
         let mut host_changed = false;
         let mut device_changed = false;
         let mut refresh = false;
@@ -192,7 +212,7 @@ impl TunerApp {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new("Driver").size(12.0).color(theme::DIM));
                     let mut selected_host = self.selected_host.clone();
-                    egui::ComboBox::from_id_source("host-select")
+                    let host_combo = egui::ComboBox::from_id_source("host-select")
                         .width(110.0)
                         .selected_text(selected_host.clone())
                         .show_ui(ui, |ui| {
@@ -200,6 +220,9 @@ impl TunerApp {
                                 ui.selectable_value(&mut selected_host, name.clone(), name.clone());
                             }
                         });
+                    host_combo.response.on_hover_text(
+                        "Automatic uses JACK when its server is running, otherwise ALSA/PipeWire.",
+                    );
                     if selected_host != self.selected_host {
                         self.selected_host = selected_host;
                         host_changed = true;
@@ -920,7 +943,11 @@ impl eframe::App for TunerApp {
 
 impl Drop for TunerApp {
     fn drop(&mut self) {
-        self.settings.host = host_option(&self.selected_host);
+        self.settings.host = if self.selected_host == AUTO_HOST {
+            None
+        } else {
+            host_option(&self.selected_host)
+        };
         self.settings.device = device_option(&self.selected_device);
         if let Err(error) = self.settings.save() {
             log::warn!("could not save settings on exit: {error}");
@@ -934,15 +961,15 @@ fn initial_selection(hosts: &[HostInfo], settings: &Settings) -> (String, String
             .iter()
             .find(|host| host.name.eq_ignore_ascii_case(requested))
     });
-    let host = requested
-        .or_else(|| hosts.iter().find(|host| host.name == "ALSA"))
-        .or_else(|| hosts.first());
+    let (label, host) = match requested {
+        Some(host) => (host.name.clone(), Some(host)),
+        // No (longer valid) explicit choice: probe JACK and fall back to
+        // ALSA/PipeWire or any other usable host.
+        None => (AUTO_HOST.to_string(), automatic_host(hosts)),
+    };
 
     let Some(host) = host else {
-        return (
-            "System default".to_string(),
-            settings.device.clone().unwrap_or_default(),
-        );
+        return (label, settings.device.clone().unwrap_or_default());
     };
 
     let device = settings
@@ -952,7 +979,15 @@ fn initial_selection(hosts: &[HostInfo], settings: &Settings) -> (String, String
         .cloned()
         .or_else(|| host.devices.first().cloned())
         .unwrap_or_default();
-    (host.name.clone(), device)
+    (label, device)
+}
+
+fn resolved_host(selected_host: &str, hosts: &[HostInfo]) -> Option<String> {
+    if selected_host == AUTO_HOST {
+        automatic_host(hosts).map(|host| host.name.clone())
+    } else {
+        host_option(selected_host)
+    }
 }
 
 fn host_option(host: &str) -> Option<String> {
@@ -961,4 +996,34 @@ fn host_option(host: &str) -> Option<String> {
 
 fn device_option(device: &str) -> Option<String> {
     (!device.trim().is_empty()).then(|| device.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn host(name: &str, devices: &[&str]) -> HostInfo {
+        HostInfo {
+            name: name.to_string(),
+            devices: devices.iter().map(|device| device.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn automatic_label_resolves_to_jack_when_its_server_is_running() {
+        let hosts = vec![host("ALSA", &["default"]), host("JACK", &["client"])];
+        assert_eq!(resolved_host(AUTO_HOST, &hosts).as_deref(), Some("JACK"));
+    }
+
+    #[test]
+    fn automatic_label_falls_back_to_alsa_without_jack() {
+        let hosts = vec![host("ALSA", &["default"]), host("JACK", &[])];
+        assert_eq!(resolved_host(AUTO_HOST, &hosts).as_deref(), Some("ALSA"));
+    }
+
+    #[test]
+    fn explicit_host_is_preserved() {
+        let hosts = vec![host("ALSA", &["default"]), host("JACK", &["client"])];
+        assert_eq!(resolved_host("ALSA", &hosts).as_deref(), Some("ALSA"));
+    }
 }

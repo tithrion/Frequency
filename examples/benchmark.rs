@@ -3,7 +3,7 @@
 //! Run with:
 //! `cargo run --release --example benchmark`
 
-use pitchperfect::dsp::pitch::{detect, detect_fft, detect_mpm, detect_yin};
+use frequency::dsp::pitch::{detect, detect_fft, detect_mpm, detect_yin};
 use std::time::Instant;
 
 fn sine(frequency: f32, sample_rate: f32, len: usize) -> Vec<f32> {
@@ -31,7 +31,7 @@ fn main() {
     let samples = sine(440.0, sample_rate, 4096);
     let iterations = 500;
 
-    println!("PitchPerfect detection benchmark — 4096 samples @ 48 kHz\n");
+    println!("Frequency detection benchmark — 4096 samples @ 48 kHz\n");
     bench("detect", iterations, || {
         std::hint::black_box(detect(&samples, sample_rate));
     });

@@ -1,0 +1,16 @@
+# Cross-compilation settings used by the release workflow for Linux ARM64.
+#
+# Pin the cross 0.2.5 image explicitly. It is based on Ubuntu 16.04 (glibc
+# 2.23), which keeps the ARM64 binaries usable on older distributions. Do not
+# use `:latest`: it points at the same release image today, but the `:main`
+# image is based on Ubuntu 24.04 (glibc 2.39) and is a moving target.
+#
+# The target architecture's development libraries are installed before
+# compiling. `$CROSS_DEB_ARCH` is provided by cross (`arm64` for this target).
+[target.aarch64-unknown-linux-gnu]
+image = "ghcr.io/cross-rs/aarch64-unknown-linux-gnu:0.2.5"
+pre-build = [
+    "dpkg --add-architecture $CROSS_DEB_ARCH",
+    "apt-get update",
+    "apt-get install -y --no-install-recommends libasound2-dev:$CROSS_DEB_ARCH libjack-jackd2-dev:$CROSS_DEB_ARCH libudev-dev:$CROSS_DEB_ARCH libx11-dev:$CROSS_DEB_ARCH libxcursor-dev:$CROSS_DEB_ARCH libxrandr-dev:$CROSS_DEB_ARCH libxi-dev:$CROSS_DEB_ARCH libgl1-mesa-dev:$CROSS_DEB_ARCH libwayland-dev:$CROSS_DEB_ARCH libxkbcommon-dev:$CROSS_DEB_ARCH",
+]

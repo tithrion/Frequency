@@ -131,7 +131,7 @@ impl AnalyzerHandle {
         let thread_snapshot = Arc::clone(&snapshot);
         let thread_control = Arc::clone(&control);
         let thread = thread::Builder::new()
-            .name("pitchperfect-dsp".to_string())
+            .name("frequency-dsp".to_string())
             .spawn(move || run(feed_receiver, thread_snapshot, thread_control))
             .expect("failed to spawn DSP thread");
 

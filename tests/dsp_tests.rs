@@ -1,8 +1,8 @@
 //! DSP and pitch-detection integration tests.
 
-use pitchperfect::dsp::pitch::{detect, detect_fft, detect_mpm, detect_yin};
-use pitchperfect::dsp::window;
-use pitchperfect::music::{cents_between, Note};
+use frequency::dsp::pitch::{detect, detect_fft, detect_mpm, detect_yin};
+use frequency::dsp::window;
+use frequency::music::{cents_between, Note};
 
 fn sine(frequency: f32, sample_rate: f32, len: usize) -> Vec<f32> {
     (0..len)

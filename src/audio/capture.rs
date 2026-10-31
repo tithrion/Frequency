@@ -67,7 +67,7 @@ impl AudioHandle {
         let status = Arc::new(Mutex::new(AudioStatus::default()));
         let thread_status = Arc::clone(&status);
         let thread = thread::Builder::new()
-            .name("pitchperfect-audio".to_string())
+            .name("frequency-audio".to_string())
             .spawn(move || audio_loop(selection, feed_tx, command_rx, thread_status))
             .expect("failed to spawn audio thread");
 

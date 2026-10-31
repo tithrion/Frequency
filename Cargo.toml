@@ -1,9 +1,9 @@
 [package]
-name = "pitchperfect"
+name = "frequency"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
-authors = ["PitchPerfect Contributors"]
+authors = ["Frequency Contributors"]
 description = "A fast, accurate, cross-platform musical instrument tuner."
 license = "GPL-3.0-only"
 readme = "README.md"
@@ -13,8 +13,10 @@ categories = ["multimedia::audio"]
 [features]
 default = []
 # CPAL's JACK host is optional because it needs libjack at build time. Enable it
-# with `cargo run --features jack` on systems that use a JACK server.
-jack = ["cpal/jack"]
+# with `cargo run --features jack` on systems that use a JACK server. When the
+# feature is compiled in, the app auto-selects JACK at startup if a server is
+# running and otherwise falls back to ALSA/PipeWire.
+jack = ["cpal/jack", "dep:libloading"]
 
 [dependencies]
 cpal = "0.15"
@@ -28,9 +30,72 @@ toml = "0.8"
 directories = "5.0"
 log = "0.4"
 env_logger = "0.11"
+# Used to probe for libjack at runtime so a build with the `jack` feature does
+# not crash on systems where the JACK library is not installed.
+libloading = { version = "0.8", optional = true }
+
+[package.metadata.deb]
+section = "sound"
+priority = "optional"
+# Generated explicitly so cross-compiled packages do not depend on
+# dpkg-shlibdeps finding foreign-architecture libraries on the build host.
+depends = [
+    "libasound2 (>= 1.0.16)",
+    "libc6 (>= 2.35)",
+    "libgcc-s1 | libgcc1",
+]
+assets = [
+    ["target/release/frequency", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/frequency/README.md", "644"],
+    ["LICENSE", "usr/share/doc/frequency/copyright", "644"],
+]
+
+# The aarch64 cross image is based on Ubuntu 16.04 (glibc 2.23), which allows
+# the ARM64 package to install on older distributions than the x86_64 build.
+[package.metadata.deb.variants.glibc223]
+name = "frequency"
+depends = [
+    "libasound2 (>= 1.0.16)",
+    "libc6 (>= 2.23)",
+    "libgcc-s1 | libgcc1",
+]
+
+[package.metadata.generate-rpm]
+auto-req = "disabled"
+assets = [
+    { source = "target/release/frequency", dest = "/usr/bin/frequency", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/frequency/README.md", mode = "644", doc = true },
+    { source = "LICENSE", dest = "/usr/share/licenses/frequency/LICENSE", mode = "644", doc = true },
+]
+
+[package.metadata.generate-rpm.requires]
+# Rich dependencies keep the package installable on both Fedora/RHEL
+# (`alsa-lib`, `libgcc`) and openSUSE/SLES (`libasound2`, `libgcc_s1`).
+"(alsa-lib or libasound2)" = "*"
+glibc = ">= 2.35"
+"(libgcc or libgcc_s1)" = "*"
+
+# cargo-generate-rpm replaces (rather than merges) the metadata with a variant,
+# so the variant repeats the assets and lowers the glibc requirement for the
+# Ubuntu 16.04 based aarch64 cross build.
+[package.metadata.generate-rpm.variants.glibc223]
+auto-req = "disabled"
+assets = [
+    { source = "target/release/frequency", dest = "/usr/bin/frequency", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/frequency/README.md", mode = "644", doc = true },
+    { source = "LICENSE", dest = "/usr/share/licenses/frequency/LICENSE", mode = "644", doc = true },
+]
+
+[package.metadata.generate-rpm.variants.glibc223.requires]
+"(alsa-lib or libasound2)" = "*"
+glibc = ">= 2.23"
+"(libgcc or libgcc_s1)" = "*"
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
+# Strip during the Rust link step. This keeps `cargo deb` from invoking the
+# host `strip`, which cannot process foreign-architecture (aarch64) binaries.
+strip = true

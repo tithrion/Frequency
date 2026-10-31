@@ -1,11 +1,11 @@
-# PitchPerfect Developer Guide
+# Frequency Developer Guide
 
-This document describes the architecture, DSP pipeline, testing strategy and cross-compilation workflow for PitchPerfect.
+This document describes the architecture, DSP pipeline, testing strategy and cross-compilation workflow for Frequency.
 
 ## 1. Project Layout
 
 ```
-pitchperfect/
+frequency/
 ├── Cargo.toml
 ├── README.md
 ├── LICENSE
@@ -59,8 +59,8 @@ pitchperfect/
                                   [GUI thread @60 FPS]
 ```
 
-- **Audio thread** (`pitchperfect-audio`): owns the CPAL `Stream`. The stream callback is allocation-free and lock-free. Multi-channel input is averaged to mono and pushed into an `rtrb` ring buffer. Device/host changes are sent as commands over `std::sync::mpsc`; the stream is dropped and rebuilt without restarting the application. A new ring consumer is handed to the DSP thread for each stream.
-- **DSP thread** (`pitchperfect-dsp`): drains the ring into a bounded `VecDeque` (16,384 samples max), analyses the most recent window every 25 ms, applies the inertia filter, and publishes an `Analysis` snapshot under an `RwLock`.
+- **Audio thread** (`frequency-audio`): owns the CPAL `Stream`. The stream callback is allocation-free and lock-free. Multi-channel input is averaged to mono and pushed into an `rtrb` ring buffer. Device/host changes are sent as commands over `std::sync::mpsc`; the stream is dropped and rebuilt without restarting the application. A new ring consumer is handed to the DSP thread for each stream.
+- **DSP thread** (`frequency-dsp`): drains the ring into a bounded `VecDeque` (16,384 samples max), analyses the most recent window every 25 ms, applies the inertia filter, and publishes an `Analysis` snapshot under an `RwLock`.
 - **GUI thread**: reads the snapshot once per frame, computes the target note and smoothed meter position, and never blocks on audio I/O. `ctx.request_repaint_after(16 ms)` keeps the needle animating at 60 FPS even without input events.
 
 Design rule: no allocation, locking or logging inside the CPAL callback. Ring overruns are harmless because the DSP always consumes the newest window.
@@ -127,9 +127,9 @@ All paths are resolved through `directories::BaseDirs` (`config::config_dir`):
 
 | Platform | Directory |
 |---|---|
-| Linux | `~/.config/pitchperfect` |
-| macOS | `~/Library/Application Support/pitchperfect` |
-| Windows | `%APPDATA%\pitchperfect` |
+| Linux | `~/.config/frequency` |
+| macOS | `~/Library/Application Support/frequency` |
+| Windows | `%APPDATA%\frequency` |
 
 - `settings.toml` is written by `Settings::save`; every value is sanitized to a safe range on load.
 - `profiles.toml` contains only custom profiles. Built-ins are generated at runtime and can never be overwritten by the loader. A custom profile whose name collides with a built-in is skipped with a warning.
@@ -165,7 +165,7 @@ cargo run --release --example benchmark
 It reports milliseconds per detection for the full `detect` pipeline, YIN, MPM and FFT on a 4096-sample 440 Hz sine. For deeper profiles use `perf` on Linux:
 
 ```bash
-perf record --call-graph dwarf ./target/release/pitchperfect
+perf record --call-graph dwarf ./target/release/frequency
 perf report
 ```
 
@@ -222,9 +222,9 @@ rustup target add x86_64-apple-darwin aarch64-apple-darwin
 cargo build --release --target x86_64-apple-darwin
 cargo build --release --target aarch64-apple-darwin
 lipo -create \
-  target/x86_64-apple-darwin/release/pitchperfect \
-  target/aarch64-apple-darwin/release/pitchperfect \
-  -output pitchperfect-universal
+  target/x86_64-apple-darwin/release/frequency \
+  target/aarch64-apple-darwin/release/frequency \
+  -output frequency-universal
 ```
 
 ### Windows (MSVC)
@@ -248,8 +248,8 @@ The release profile uses `opt-level = 3`, full LTO, one codegen unit and `panic 
 - **New detector**: add a function returning `PitchEstimate` in `dsp/pitch.rs` and include it in the candidate selection in `detect`.
 - **New built-in profile**: add an entry in `config::profiles::builtin_profiles` and a test in `tests/profile_tests.rs`.
 - **UI changes**: keep painting in `gui/meter.rs`, editor widgets in `gui/editor.rs`, and application state in `gui/app.rs`.
-- **Audio backends**: CPAL hosts are compiled in by platform; `audio/host.rs` enumerates whatever is available. The Linux JACK host is behind the `jack` Cargo feature (enable with `--features jack`) so the default build only needs ALSA/`libasound`. Avoid holding CPAL objects on the GUI thread.
+- **Audio backends**: CPAL hosts are compiled in by platform; `audio/host.rs` enumerates whatever is available. The Linux JACK host is behind the `jack` Cargo feature (enable with `--features jack`) so the default build only needs ALSA/`libasound`. When the feature is enabled, `Automatic` host selection probes JACK at startup: CPAL only creates JACK devices after a successful client connection, so an empty JACK host means no server is running and ALSA/PipeWire is used instead. Avoid holding CPAL objects on the GUI thread.
 
 ## 8. License
 
-PitchPerfect is licensed under the GNU General Public License v3.0 (GPL-3.0). Contributions are accepted under the same terms.
+Frequency is licensed under the GNU General Public License v3.0 (GPL-3.0). Contributions are accepted under the same terms.

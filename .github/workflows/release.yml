@@ -1,0 +1,258 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  BIN_NAME: frequency
+
+jobs:
+  validate:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure tag matches Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          cargo_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          echo "tag=${tag_version} Cargo.toml=${cargo_version}"
+          if [ "${tag_version}" != "${cargo_version}" ]; then
+            echo "::error::Tag version (${tag_version}) does not match Cargo.toml version (${cargo_version})"
+            exit 1
+          fi
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            platform: linux
+            cross: false
+            features: '--features jack'
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04
+            platform: linux
+            cross: true
+            features: '--features jack'
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            platform: windows
+            cross: false
+            features: ''
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            platform: windows
+            cross: false
+            features: ''
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            platform: macos
+            cross: false
+            features: ''
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            platform: macos
+            cross: false
+            features: ''
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux' && !matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libudev-dev libjack-jackd2-dev \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libwayland-dev libxkbcommon-dev pkg-config
+
+      - name: Install cross
+        if: matrix.cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross@0.2.5
+
+      - name: Configure MSVC for Windows ARM64
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64_arm64
+
+      - name: Configure static CRT (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          "RUSTFLAGS=-C target-feature=+crt-static" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
+
+      - name: Build
+        if: ${{ !matrix.cross }}
+        run: cargo build --locked --release --target ${{ matrix.target }} ${{ matrix.features }}
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --locked --release --target ${{ matrix.target }} ${{ matrix.features }}
+
+      - name: Install Linux packaging tools
+        if: matrix.platform == 'linux'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb,cargo-generate-rpm
+
+      - name: Package Linux (tar.gz, deb, rpm)
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          TARGET="${{ matrix.target }}"
+          BIN="target/${TARGET}/release/${BIN_NAME}"
+          STAGE="target/package/${BIN_NAME}-${VERSION}"
+
+          mkdir -p dist
+          rm -rf target/package
+          mkdir -p "$STAGE"
+          cp "$BIN" README.md LICENSE "$STAGE/"
+          cp -r docs "$STAGE/"
+          tar -czf "dist/${BIN_NAME}-${VERSION}-${TARGET}.tar.gz" -C target/package "${BIN_NAME}-${VERSION}"
+
+          DEB_ARGS=(--target "$TARGET" --no-build -o dist)
+          RPM_ARGS=(--target "$TARGET")
+          if [[ "$TARGET" == aarch64-* ]]; then
+            DEB_ARGS+=(--variant glibc223)
+            RPM_ARGS+=(--variant glibc223)
+          fi
+          cargo deb "${DEB_ARGS[@]}"
+
+          cargo generate-rpm "${RPM_ARGS[@]}"
+          cp "target/${TARGET}/generate-rpm/"*.rpm dist/
+
+          ls -l dist
+
+      - name: Package Windows (zip)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' |
+            Select-Object -First 1).Matches[0].Groups[1].Value
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Force `
+            -Path "target/${{ matrix.target }}/release/$env:BIN_NAME.exe", "README.md", "LICENSE" `
+            -DestinationPath "dist/$env:BIN_NAME-$version-${{ matrix.target }}.zip"
+          Get-ChildItem dist
+
+      - name: Package macOS (app bundle + dmg)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          TARGET="${{ matrix.target }}"
+          APP="target/package/Frequency.app"
+          DMG_STAGE="target/package/dmg"
+
+          rm -rf target/package
+          mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources" "${DMG_STAGE}"
+          cp "target/${TARGET}/release/${BIN_NAME}" "${APP}/Contents/MacOS/${BIN_NAME}"
+
+          cat > "${APP}/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key>
+            <string>Frequency</string>
+            <key>CFBundleDisplayName</key>
+            <string>Frequency</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.tithrion.frequency</string>
+            <key>CFBundleVersion</key>
+            <string>${VERSION}</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${VERSION}</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleExecutable</key>
+            <string>${BIN_NAME}</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>11.0</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+            <key>NSMicrophoneUsageDescription</key>
+            <string>Frequency needs microphone access to detect the pitch of your instrument.</string>
+          </dict>
+          </plist>
+          EOF
+
+          # Ad-hoc signature so the arm64 build runs without a Developer ID.
+          codesign --force --sign - "${APP}"
+
+          cp -R "${APP}" "${DMG_STAGE}/"
+          ln -s /Applications "${DMG_STAGE}/Applications"
+          mkdir -p dist
+          hdiutil create \
+            -volname "Frequency ${VERSION}" \
+            -srcfolder "${DMG_STAGE}" \
+            -ov -format UDZO \
+            "dist/${BIN_NAME}-${VERSION}-${TARGET}.dmg"
+
+          ls -l dist
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BIN_NAME }}-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

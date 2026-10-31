@@ -1,10 +1,10 @@
 //! Profile, note and settings integration tests.
 
-use pitchperfect::config::profiles::{
+use frequency::config::profiles::{
     builtin_profiles, Profile, ProfilesFile, ProfilesStore, TargetSpec, GENERIC_PROFILE_NAME,
 };
-use pitchperfect::config::settings::{Settings, MAX_A4, MIN_A4};
-use pitchperfect::music::{cents_between, Note, TuningTarget};
+use frequency::config::settings::{Settings, MAX_A4, MIN_A4};
+use frequency::music::{cents_between, Note, TuningTarget};
 
 #[test]
 fn required_builtin_profiles_exist_with_expected_tunings() {

@@ -1,4 +1,4 @@
-//! PitchPerfect — a fast, accurate, cross-platform musical instrument tuner.
+//! Frequency — a fast, accurate, cross-platform musical instrument tuner.
 //!
 //! The crate is split into four layers:
 //!

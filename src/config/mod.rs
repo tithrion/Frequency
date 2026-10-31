@@ -8,11 +8,11 @@ use std::path::PathBuf;
 
 /// Directory in which settings and custom profiles are stored.
 ///
-/// On Linux this is `~/.config/pitchperfect`, on macOS
-/// `~/Library/Application Support/pitchperfect`, and on Windows
-/// `%APPDATA%\pitchperfect`.
+/// On Linux this is `~/.config/frequency`, on macOS
+/// `~/Library/Application Support/frequency`, and on Windows
+/// `%APPDATA%\frequency`.
 pub fn config_dir() -> Option<PathBuf> {
-    BaseDirs::new().map(|dirs| dirs.config_dir().join("pitchperfect"))
+    BaseDirs::new().map(|dirs| dirs.config_dir().join("frequency"))
 }
 
 pub fn settings_path() -> Option<PathBuf> {
