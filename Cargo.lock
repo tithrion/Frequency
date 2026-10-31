@@ -1452,6 +1452,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "frequency"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "directories",
+ "eframe",
+ "egui",
+ "env_logger",
+ "image",
+ "libloading 0.8.9",
+ "log",
+ "pitch-detection",
+ "rtrb",
+ "rustfft",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1906,6 +1925,7 @@ dependencies = [
  "bytemuck",
  "byteorder",
  "color_quant",
+ "jpeg-decoder",
  "num-traits",
  "png",
 ]
@@ -2072,6 +2092,12 @@ dependencies = [
  "getrandom 0.4.3",
  "libc",
 ]
+
+[[package]]
+name = "jpeg-decoder"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00810f1d8b74be64b13dbf3db89ac67740615d6c891f0e7b6179326533011a07"
 
 [[package]]
 name = "js-sys"
@@ -2696,24 +2722,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e086e70dfcfd46cd6097c501a66fb07cd73ee8c27844b0941d9b2b3e43dfbf92"
 dependencies = [
  "rustfft",
-]
-
-[[package]]
-name = "frequency"
-version = "0.1.0"
-dependencies = [
- "cpal",
- "directories",
- "eframe",
- "egui",
- "env_logger",
- "libloading 0.8.9",
- "log",
- "pitch-detection",
- "rtrb",
- "rustfft",
- "serde",
- "toml",
 ]
 
 [[package]]

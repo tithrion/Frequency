@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod editor;
+pub mod logo;
 pub mod meter;
 pub mod theme;
 

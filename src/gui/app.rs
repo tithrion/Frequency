@@ -6,7 +6,7 @@ use crate::config::profiles::{ProfilesStore, GENERIC_PROFILE_NAME};
 use crate::config::settings::{Settings, MAX_A4, MAX_SMOOTHING, MIN_A4, MIN_SMOOTHING};
 use crate::dsp::{Analysis, AnalyzerHandle};
 use crate::gui::editor::EditorState;
-use crate::gui::{meter, theme};
+use crate::gui::{logo, meter, theme};
 use crate::music::TuningTarget;
 use eframe::egui::{self, Align, Color32, Layout, Margin, RichText, Stroke};
 use std::sync::mpsc;
@@ -38,11 +38,13 @@ pub struct TunerApp {
     editor: EditorState,
     visual_cents: Option<f32>,
     notice: Option<String>,
+    logo: Option<egui::TextureHandle>,
 }
 
 impl TunerApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         theme::apply(&cc.egui_ctx);
+        let logo = logo::texture(&cc.egui_ctx);
 
         let mut settings = Settings::load();
         settings.sanitize();
@@ -81,6 +83,7 @@ impl TunerApp {
             editor: EditorState::default(),
             visual_cents: None,
             notice: None,
+            logo,
         }
     }
 
@@ -149,12 +152,24 @@ impl TunerApp {
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("Frequency")
-                            .size(24.0)
-                            .strong()
-                            .color(theme::TEXT),
-                    );
+                    match &self.logo {
+                        Some(logo) => {
+                            ui.add(
+                                egui::Image::new(logo)
+                                    .fit_to_exact_size(egui::vec2(36.0, 36.0))
+                                    .rounding(8.0),
+                            )
+                            .on_hover_text("Frequency");
+                        }
+                        None => {
+                            ui.label(
+                                RichText::new("Frequency")
+                                    .size(24.0)
+                                    .strong()
+                                    .color(theme::TEXT),
+                            );
+                        }
+                    }
                     ui.label(
                         RichText::new("TUNER")
                             .size(10.0)

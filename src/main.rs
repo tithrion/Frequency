@@ -9,11 +9,16 @@ fn main() -> eframe::Result<()> {
     )
     .init();
 
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([980.0, 700.0])
+        .with_min_inner_size([720.0, 560.0])
+        .with_title("Frequency");
+    if let Some(icon) = frequency::gui::logo::icon_data() {
+        viewport = viewport.with_icon(icon);
+    }
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([980.0, 700.0])
-            .with_min_inner_size([720.0, 560.0])
-            .with_title("Frequency"),
+        viewport,
         ..Default::default()
     };
 

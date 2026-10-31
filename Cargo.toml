@@ -22,6 +22,8 @@ jack = ["cpal/jack", "dep:libloading"]
 cpal = "0.15"
 eframe = "0.27"
 egui = "0.27"
+# Only the JPEG decoder is needed; eframe already enables the PNG feature.
+image = { version = "0.24", default-features = false, features = ["jpeg"] }
 rtrb = "0.3" # Lock-free ringbuffer
 rustfft = "6.2"
 pitch-detection = "0.3" # YIN / MPM implementations
